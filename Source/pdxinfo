@@ -1,0 +1,7 @@
+name=CrankScribe
+author=CrankScribe
+description=Voice-powered note-taking with AI transcription
+bundleID=com.crankscribe.app
+version=1.0.0
+buildNumber=1
+imagePath=launcher
