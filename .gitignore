@@ -1,0 +1,24 @@
+# Playdate build artifacts
+*.pdx/
+*.pdx.zip
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude
+.claude/
+
+# Temporary files
+*.tmp
+*.log
+cache/
