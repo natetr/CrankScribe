@@ -1,4 +1,4 @@
--- Recording: Cassette tape recorder style audio capture
+-- Recording: Cassette tape recorder style audio capture with progressive upload
 
 local gfx <const> = playdate.graphics
 
@@ -19,6 +19,11 @@ local levelUpdateTimer = nil
 local currentLevel = 0
 local reelAngle = 0
 
+-- Upload state
+local uploadSessionId = nil
+local chunksQueued = 0
+local uploadEnabled = false
+
 -- Screen lifecycle
 function Recording:enter(data)
     isRecording = false
@@ -31,6 +36,15 @@ function Recording:enter(data)
     currentLevel = 0
     animFrame = 0
     reelAngle = 0
+    chunksQueued = 0
+
+    -- Initialize uploader with settings
+    if App.settings and App.settings.serverUrl and App.settings.serverUrl ~= "" then
+        ChunkUploader.init({ serverUrl = App.settings.serverUrl })
+        uploadEnabled = ChunkUploader.isEnabled()
+    else
+        uploadEnabled = false
+    end
 
     -- Start recording immediately
     self:startRecording()
@@ -58,6 +72,11 @@ function Recording:leave()
         AudioRecorder.stop()
     end
 
+    -- Cancel any pending uploads if leaving unexpectedly
+    if uploadEnabled then
+        ChunkUploader.cancel()
+    end
+
     if animTimer then
         animTimer:remove()
         animTimer = nil
@@ -75,6 +94,12 @@ function Recording:startRecording()
         isRecording = true
         isPaused = false
         recordingStartTime = playdate.getCurrentTimeMilliseconds()
+
+        -- Start upload session if enabled
+        if uploadEnabled then
+            uploadSessionId = ChunkUploader.startSession()
+            print("Upload session started: " .. tostring(uploadSessionId))
+        end
     else
         print("Recording error: " .. tostring(err))
         ScreenManager:switchTo("mainMenu")
@@ -94,10 +119,21 @@ function Recording:stopRecording()
             transcript = liveTranscript,
         }
 
-        ScreenManager:switchTo("processing", {
-            mode = "transcribe",
-            wavData = wavData,
-        })
+        -- If upload is enabled, use progressive upload flow
+        if uploadEnabled and uploadSessionId then
+            ScreenManager:switchTo("processing", {
+                mode = "finalize",  -- Finalize the upload session
+                sessionId = uploadSessionId,
+                wavData = wavData,  -- Keep WAV as backup
+                chunksQueued = chunksQueued,
+            })
+        else
+            -- Fallback to old mock flow
+            ScreenManager:switchTo("processing", {
+                mode = "transcribe",
+                wavData = wavData,
+            })
+        end
     else
         ScreenManager:switchTo("mainMenu")
     end
@@ -108,11 +144,18 @@ function Recording:update()
         elapsedSeconds = (playdate.getCurrentTimeMilliseconds() - recordingStartTime) / 1000
     end
 
-    -- Check for completed chunks
+    -- Check for completed chunks and queue for upload
     if isRecording and AudioRecorder.hasChunk() then
         local chunkData = AudioRecorder.getChunk()
         if chunkData then
-            self:transcribeChunk(chunkData)
+            local chunkSeq = AudioRecorder.getChunkSequence()
+
+            -- Queue for progressive upload
+            if uploadEnabled and uploadSessionId then
+                ChunkUploader.queueChunk(chunkData, chunkSeq)
+                chunksQueued = chunksQueued + 1
+                print("Chunk " .. chunkSeq .. " queued for upload (" .. #chunkData .. " bytes)")
+            end
         end
     end
 
@@ -123,19 +166,6 @@ function Recording:update()
         local maxScroll = math.max(0, #transcriptLines - maxVisibleLines)
         scrollOffset = math.max(0, math.min(scrollOffset, maxScroll))
     end
-end
-
-function Recording:transcribeChunk(wavData)
-    OpenAI.transcribe(wavData, function(text, err)
-        if text then
-            if liveTranscript ~= "" then
-                liveTranscript = liveTranscript .. " " .. text
-            else
-                liveTranscript = text
-            end
-            self:wrapTranscript()
-        end
-    end)
 end
 
 function Recording:wrapTranscript()
@@ -225,6 +255,20 @@ function Recording:drawTapeDeck()
     gfx.setFont(gfx.getSystemFont(gfx.kFontBold))
     local statusText = isPaused and "PAUSE" or "REC"
     gfx.drawText(statusText, recX + 20, recY + 1)
+
+    -- Upload indicator (if enabled)
+    if uploadEnabled then
+        local uploadX = recX + 70
+        local status = ChunkUploader.getStatus()
+        local uploadText = string.format("TX:%d", status.uploadedChunks)
+        if status.isUploading then
+            -- Blinking upload indicator
+            if animFrame < 10 then
+                gfx.fillCircleAtPoint(uploadX, recY + 8, 4)
+            end
+        end
+        gfx.drawText(uploadText, uploadX + 8, recY + 1)
+    end
 
     -- Timer display (digital clock style)
     local minutes = math.floor(elapsedSeconds / 60)

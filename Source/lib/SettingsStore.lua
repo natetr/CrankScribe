@@ -7,6 +7,7 @@ local SETTINGS_FILE = "settings"
 -- Default settings
 local defaults = {
     apiKey = "",
+    serverUrl = "",  -- CrankScribe transcription server URL
     micInput = "internal",  -- "internal" or "headset"
     autoSave = true,
 }

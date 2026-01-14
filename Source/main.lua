@@ -18,8 +18,9 @@ import "screens/Settings"
 import "lib/SettingsStore"
 import "lib/NotesStore"
 import "lib/OpenAI"
-import "lib/MicStub"      -- Provides fallback if C extension not available
+import "lib/MicStub"        -- Provides fallback if C extension not available
 import "lib/AudioRecorder"
+import "lib/ChunkUploader"  -- Progressive upload manager
 
 local gfx <const> = playdate.graphics
 

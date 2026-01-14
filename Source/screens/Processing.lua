@@ -5,7 +5,7 @@ local gfx <const> = playdate.graphics
 Processing = {}
 
 -- State
-local mode = "transcribe"  -- "transcribe" | "minutes" | "summary" | "todos"
+local mode = "transcribe"  -- "transcribe" | "finalize" | "minutes" | "summary" | "todos"
 local statusText = "Processing..."
 local animFrame = 0
 local animTimer = nil
@@ -14,8 +14,15 @@ local hasError = false
 local errorMessage = ""
 local resultText = ""
 
+-- Upload finalization state
+local uploadPhase = "waiting"  -- "waiting" | "finalizing" | "done"
+local chunksQueued = 0
+local sessionId = nil
+local backupWavData = nil
+
 local modeLabels = {
     transcribe = "Transcribing...",
+    finalize = "Uploading...",
     minutes = "Generating Minutes...",
     summary = "Summarizing...",
     todos = "Extracting To-Dos...",
@@ -30,6 +37,10 @@ function Processing:enter(data)
     hasError = false
     errorMessage = ""
     resultText = ""
+    uploadPhase = "waiting"
+    chunksQueued = data and data.chunksQueued or 0
+    sessionId = data and data.sessionId
+    backupWavData = data and data.wavData
 
     -- Animation timer
     animTimer = playdate.timer.new(80, function()
@@ -38,7 +49,9 @@ function Processing:enter(data)
     animTimer.repeats = true
 
     -- Start the appropriate processing
-    if mode == "transcribe" then
+    if mode == "finalize" then
+        self:startFinalization()
+    elseif mode == "transcribe" then
         self:startTranscription(data.wavData)
     else
         self:startAIProcessing(data.transcript, mode)
@@ -107,6 +120,39 @@ function Processing:startAIProcessing(transcript, processingMode)
     end)
 end
 
+-- Start progressive upload finalization
+function Processing:startFinalization()
+    if not sessionId then
+        hasError = true
+        errorMessage = "No upload session"
+        return
+    end
+
+    uploadPhase = "waiting"
+    statusText = "Finishing upload..."
+
+    -- Call finalize (will wait for queue to drain)
+    ChunkUploader.finalize(function(transcript, err, metadata)
+        if err then
+            hasError = true
+            errorMessage = err
+            return
+        end
+
+        uploadPhase = "done"
+        isComplete = true
+        resultText = transcript
+
+        -- Create note with transcript
+        local duration = metadata and metadata.audio_duration_seconds or (App.currentNote and App.currentNote.duration or 0)
+        local note = NotesStore.create(transcript, duration)
+        App.currentNote = note
+
+        -- Go to post-recording screen
+        ScreenManager:switchTo("postRecording", { note = note })
+    end)
+end
+
 function Processing:update()
     -- Nothing to update, waiting for callback
 end
@@ -147,15 +193,25 @@ function Processing:drawProgress()
     -- Animated spinner
     self:drawSpinner(centerX, centerY)
 
-    -- Thinking text
+    -- Status text based on mode
     gfx.setFont(gfx.getSystemFont())
-    local thinkingText = "Thinking"
+    local statusTextDisplay
+    if mode == "finalize" then
+        local status = ChunkUploader.getStatus()
+        if status.isUploading or status.queueSize > 0 then
+            statusTextDisplay = string.format("Uploading chunk %d...", status.uploadedChunks + 1)
+        else
+            statusTextDisplay = "Transcribing..."
+        end
+    else
+        statusTextDisplay = "Thinking"
+    end
     local dots = string.rep(".", (animFrame // 3) % 4)
-    local fullText = thinkingText .. dots
+    local fullText = statusTextDisplay .. dots
     local textWidth = gfx.getTextSize(fullText)
     gfx.drawText(fullText, centerX - textWidth / 2, centerY + 50)
 
-    -- Progress bar (indeterminate)
+    -- Progress bar
     local barWidth = 200
     local barHeight = 8
     local barX = (screenWidth - barWidth) / 2
@@ -164,13 +220,29 @@ function Processing:drawProgress()
     gfx.setColor(gfx.kColorBlack)
     gfx.drawRect(barX, barY, barWidth, barHeight)
 
-    -- Moving indicator
-    local indicatorWidth = 40
-    local progress = (animFrame / 12) * (barWidth - indicatorWidth)
-    local pattern = {0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55}
-    gfx.setPattern(pattern)
-    gfx.fillRect(barX + 2 + progress, barY + 2, indicatorWidth, barHeight - 4)
-    gfx.setColor(gfx.kColorBlack)
+    -- For finalize mode, show actual progress; otherwise indeterminate
+    if mode == "finalize" then
+        local status = ChunkUploader.getStatus()
+        local progressPercent = ChunkUploader.getProgress() / 100
+        local fillWidth = math.floor((barWidth - 4) * progressPercent)
+        gfx.fillRect(barX + 2, barY + 2, fillWidth, barHeight - 4)
+
+        -- Show upload stats
+        gfx.setFont(gfx.getSystemFont())
+        local statsText = string.format("Uploaded: %d chunks (%.1f KB)",
+            status.uploadedChunks,
+            status.totalBytesUploaded / 1024)
+        local statsWidth = gfx.getTextSize(statsText)
+        gfx.drawText(statsText, centerX - statsWidth / 2, barY + 15)
+    else
+        -- Indeterminate progress (moving indicator)
+        local indicatorWidth = 40
+        local progress = (animFrame / 12) * (barWidth - indicatorWidth)
+        local pattern = {0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55}
+        gfx.setPattern(pattern)
+        gfx.fillRect(barX + 2 + progress, barY + 2, indicatorWidth, barHeight - 4)
+        gfx.setColor(gfx.kColorBlack)
+    end
 end
 
 function Processing:drawSpinner(x, y)
@@ -250,16 +322,21 @@ function Processing:BButtonDown()
     -- Cancel/back
     OpenAI.cancel()
 
+    -- Also cancel upload if in finalize mode
+    if mode == "finalize" then
+        ChunkUploader.cancel()
+    end
+
     if hasError then
         -- Go back to previous screen
-        if mode == "transcribe" then
+        if mode == "transcribe" or mode == "finalize" then
             ScreenManager:switchTo("mainMenu")
         else
             ScreenManager:switchTo("postRecording", { note = App.currentNote })
         end
     else
         -- Cancel in progress
-        if mode == "transcribe" then
+        if mode == "transcribe" or mode == "finalize" then
             ScreenManager:switchTo("mainMenu")
         else
             ScreenManager:switchTo("postRecording", { note = App.currentNote })
