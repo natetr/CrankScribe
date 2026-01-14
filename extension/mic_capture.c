@@ -273,7 +273,7 @@ static int mic_stopRecording(lua_State* L) {
     // Push as Lua string (binary data)
     pd->lua->pushBytes(wav_data, wav_size);
 
-    // Cleanup
+    // Cleanup (but keep chunk_buffer - it will be retrieved by getChunk())
     pd->system->realloc(wav_data, 0);
     pd->system->realloc(audio_buffer, 0);
     audio_buffer = NULL;
@@ -283,12 +283,7 @@ static int mic_stopRecording(lua_State* L) {
     buffer_position = 0;
     compressed_position = 0;
 
-    // Clear chunk if any
-    if (chunk_buffer) {
-        pd->system->realloc(chunk_buffer, 0);
-        chunk_buffer = NULL;
-        chunk_size = 0;
-    }
+    // NOTE: Don't clear chunk_buffer here - Lua needs to call getChunk() to retrieve it
 
     return 1;
 }
