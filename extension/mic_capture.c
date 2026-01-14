@@ -233,7 +233,7 @@ static int mic_stopRecording(lua_State* L) {
             memcpy(chunk_buffer, compressed_buffer, chunk_size);
             chunk_ready = 1;
             chunk_sequence++;
-            pd->system->logToConsole("Final chunk created: %zu bytes", chunk_size);
+            pd->system->logToConsole("Final chunk created: %d bytes", (int)chunk_size);
         }
     }
 

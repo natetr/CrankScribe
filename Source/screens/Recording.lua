@@ -155,6 +155,11 @@ function Recording:update()
         elapsedSeconds = (playdate.getCurrentTimeMilliseconds() - recordingStartTime) / 1000
     end
 
+    -- Update chunk uploader (polls HTTP state)
+    if uploadEnabled then
+        ChunkUploader.update()
+    end
+
     -- Check for completed chunks and queue for upload
     if isRecording and AudioRecorder.hasChunk() then
         local chunkData = AudioRecorder.getChunk()

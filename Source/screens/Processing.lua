@@ -154,7 +154,10 @@ function Processing:startFinalization()
 end
 
 function Processing:update()
-    -- Nothing to update, waiting for callback
+    -- Update chunk uploader (polls HTTP state) - critical for finalize mode
+    if mode == "finalize" then
+        ChunkUploader.update()
+    end
 end
 
 function Processing:draw()
