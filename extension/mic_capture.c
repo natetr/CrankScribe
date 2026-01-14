@@ -225,6 +225,18 @@ static int mic_stopRecording(lua_State* L) {
     pd->sound->setMicCallback(NULL, NULL, kMicInputAutodetect);
     is_recording = 0;
 
+    // Generate final chunk from any remaining compressed data
+    if (compressed_position > 0 && !chunk_ready) {
+        chunk_size = compressed_position;
+        chunk_buffer = (uint8_t*)pd->system->realloc(NULL, chunk_size);
+        if (chunk_buffer) {
+            memcpy(chunk_buffer, compressed_buffer, chunk_size);
+            chunk_ready = 1;
+            chunk_sequence++;
+            pd->system->logToConsole("Final chunk created: %zu bytes", chunk_size);
+        }
+    }
+
     if (!audio_buffer || buffer_position == 0) {
         if (audio_buffer) {
             pd->system->realloc(audio_buffer, 0);
