@@ -55,6 +55,15 @@ function ChunkUploader.startSession()
     totalBytesUploaded = 0
     finalizeCallback = nil
 
+    -- Request network access permission
+    if playdate.network and playdate.network.http then
+        local host = serverUrl:match("https?://([^/]+)")
+        if host then
+            print("Requesting network access for: " .. host)
+            playdate.network.http.requestAccess(host, 443, true, "CrankScribe needs to upload audio for transcription")
+        end
+    end
+
     return sessionId
 end
 
