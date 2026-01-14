@@ -1,47 +1,95 @@
 # CrankScribe
 
-A voice-powered note-taking app for Playdate that records audio and transcribes via OpenAI's Whisper API.
+A voice-powered note-taking app for Playdate that records audio and transcribes via cloud services.
 
-## Status: Tabled
+## Status: Active Development
 
-This project has been **tabled** due to a fundamental platform limitation: **the Playdate SDK does not expose HTTP networking APIs to developers**.
+**Good news!** Playdate SDK 2.7.0 (April 2025) added HTTP networking APIs, enabling cloud transcription.
 
-While the Playdate hardware has WiFi capability, Panic has not made networking available in the SDK. This has been a [highly requested feature](https://devforum.play.date/t/networking-functionality/4881) in the developer community for years, but as of SDK 2.6 (January 2025), it remains unavailable.
+## Architecture
 
-Without HTTP networking, the core value proposition of CrankScribe—on-device voice recording with real-time cloud transcription—is not possible.
+CrankScribe uses aggressive compression + progressive upload to work around Playdate's slow WiFi:
 
-### Potential Workarounds (not implemented)
+```
+DURING RECORDING (30-second chunks)
+┌──────────┐   ┌──────────────┐   ┌────────────┐   ┌────────────────┐
+│   Mic    │──▶│ Downsample   │──▶│  μ-law     │──▶│  VAD Filter    │
+│ (44.1kHz)│   │ to 8kHz      │   │  8-bit     │   │ (skip silence) │
+└──────────┘   └──────────────┘   └────────────┘   └───────┬────────┘
+                                                           │
+                  Progressive upload ◀─────────────────────┘
 
-- **Companion App**: A macOS/Windows app that watches for new audio files when the Playdate syncs, transcribes them, and writes results back
-- **Serial Bridge**: Stream audio over USB serial connection to a host computer (requires being tethered)
-- **Manual Workflow**: Export WAV files via USB, transcribe externally
+AFTER RECORDING
+┌────────────────────────────────────────────────────────────┐
+│ Server combines chunks → Whisper API → Transcript returned │
+└────────────────────────────────────────────────────────────┘
+```
 
-If Panic adds HTTP networking to the SDK in the future, this project could be revived.
+### Compression Chain
 
-## What's Here
+| Stage | Reduction |
+|-------|-----------|
+| 44.1kHz → 8kHz | 82% |
+| μ-law 8-bit | 91% |
+| VAD (skip silence) | 95% |
 
-The codebase includes a fully functional UI with:
+**Result:** 1 hour recording = ~17 MB (vs ~115 MB raw)
 
-- Cassette tape recorder aesthetic
-- Recording screen with animated VU meter and spinning reels
-- Settings screen with USB file drop for API key configuration
-- Notes list with tape spine visual style
-- Post-recording actions menu (transcribe, summarize, meeting minutes, to-dos)
-- Mock API responses for testing the UI flow in the simulator
+## Features
 
-## Building
+- Cassette tape recorder UI with animated reels and VU meter
+- Real-time upload progress during recording
+- AI processing: transcription, summaries, meeting minutes, to-do extraction
+- Local note storage with tape spine visual style
+
+## Setup
+
+### 1. Deploy the Server
 
 ```bash
-# Requires Playdate SDK
+cd server
+heroku create your-app-name
+heroku config:set OPENAI_API_KEY=sk-your-key
+git subtree push --prefix server heroku main
+```
+
+Or run locally:
+```bash
+cd server
+pip install -r requirements.txt
+export OPENAI_API_KEY=sk-your-key
+python app.py
+```
+
+### 2. Configure Playdate
+
+Create `api_key.txt` with your OpenAI API key and drop it onto the Playdate via USB. The app will import it on launch.
+
+Set the server URL in Settings.
+
+### 3. Build
+
+```bash
+# Requires Playdate SDK 3.0.2+
 pdc Source CrankScribe.pdx
 
 # Open in simulator
 open CrankScribe.pdx
 ```
 
-## Screenshots
+## Server Endpoints
 
-The app runs in the simulator with mock transcription responses, allowing you to explore the full UI.
+| Endpoint | Description |
+|----------|-------------|
+| `POST /chunk` | Receive compressed audio chunk |
+| `POST /finalize` | Combine chunks and transcribe |
+| `POST /process` | LLM processing (summary/minutes/todos) |
+| `GET /health` | Health check |
+
+## Costs
+
+- **OpenAI Whisper**: $0.006/min (~$0.36/hour)
+- **Heroku**: Free tier works for personal use
 
 ## License
 
