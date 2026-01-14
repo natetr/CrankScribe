@@ -450,20 +450,6 @@ static void createWavHeader(WavHeader* header, size_t num_samples) {
     header->data_size = (uint32_t)data_size;
 }
 
-// Lua binding registration table
-static const lua_reg mic_lib[] = {
-    { "startRecording", mic_startRecording },
-    { "stopRecording", mic_stopRecording },
-    { "getLevel", mic_getLevel },
-    { "isRecording", mic_isRecording },
-    { "hasChunk", mic_hasChunk },
-    { "getChunk", mic_getChunk },
-    { "getChunkSequence", mic_getChunkSequence },
-    { "getDuration", mic_getDuration },
-    { "setVADEnabled", mic_setVADEnabled },
-    { NULL, NULL }
-};
-
 // Extension event handler
 #ifdef _WINDLL
 __declspec(dllexport)
@@ -474,11 +460,39 @@ int eventHandler(PlaydateAPI* playdate, PDSystemEvent event, uint32_t arg) {
     if (event == kEventInitLua) {
         pd = playdate;
 
+        // Register mic as a global table with functions
+        // This matches the Lua stub pattern: mic.startRecording(), mic.getLevel(), etc.
         const char* err;
-        if (!pd->lua->registerClass("mic", mic_lib, NULL, 0, &err)) {
-            pd->system->logToConsole("Failed to register mic class: %s", err);
-            return -1;
+
+        if (!pd->lua->addFunction(mic_startRecording, "mic.startRecording", &err)) {
+            pd->system->logToConsole("Failed to register mic.startRecording: %s", err);
         }
+        if (!pd->lua->addFunction(mic_stopRecording, "mic.stopRecording", &err)) {
+            pd->system->logToConsole("Failed to register mic.stopRecording: %s", err);
+        }
+        if (!pd->lua->addFunction(mic_getLevel, "mic.getLevel", &err)) {
+            pd->system->logToConsole("Failed to register mic.getLevel: %s", err);
+        }
+        if (!pd->lua->addFunction(mic_isRecording, "mic.isRecording", &err)) {
+            pd->system->logToConsole("Failed to register mic.isRecording: %s", err);
+        }
+        if (!pd->lua->addFunction(mic_hasChunk, "mic.hasChunk", &err)) {
+            pd->system->logToConsole("Failed to register mic.hasChunk: %s", err);
+        }
+        if (!pd->lua->addFunction(mic_getChunk, "mic.getChunk", &err)) {
+            pd->system->logToConsole("Failed to register mic.getChunk: %s", err);
+        }
+        if (!pd->lua->addFunction(mic_getChunkSequence, "mic.getChunkSequence", &err)) {
+            pd->system->logToConsole("Failed to register mic.getChunkSequence: %s", err);
+        }
+        if (!pd->lua->addFunction(mic_getDuration, "mic.getDuration", &err)) {
+            pd->system->logToConsole("Failed to register mic.getDuration: %s", err);
+        }
+        if (!pd->lua->addFunction(mic_setVADEnabled, "mic.setVADEnabled", &err)) {
+            pd->system->logToConsole("Failed to register mic.setVADEnabled: %s", err);
+        }
+
+        pd->system->logToConsole("mic module loaded (C extension)");
     }
 
     return 0;

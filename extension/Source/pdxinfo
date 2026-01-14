@@ -1,0 +1,6 @@
+name=mic_capture
+author=CrankScribe
+description=Microphone capture extension
+bundleID=com.crankscribe.mic
+version=1.0
+buildNumber=1
