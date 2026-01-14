@@ -7,7 +7,7 @@ local SETTINGS_FILE = "settings"
 -- Default settings
 local defaults = {
     apiKey = "",
-    serverUrl = "",  -- CrankScribe transcription server URL
+    serverUrl = "https://crankscribe-api-2f2fa5f92127.herokuapp.com",  -- CrankScribe transcription server URL
     micInput = "internal",  -- "internal" or "headset"
     autoSave = true,
 }
